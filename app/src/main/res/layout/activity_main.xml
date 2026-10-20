@@ -17,4 +17,11 @@
         app:outColor="@color/purple_700"
         app:inColor="@color/transparent"
         />
+    <com.carl.component.view.ProgressView
+        android:id="@+id/progress_view"
+        android:layout_width="60dp"
+        android:layout_height="60dp"
+        android:minWidth="120dp"
+        android:minHeight="120dp"
+        app:color="@color/purple_700" />
 </LinearLayout>
