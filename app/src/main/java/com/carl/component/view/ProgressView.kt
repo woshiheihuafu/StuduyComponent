@@ -6,15 +6,15 @@ import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.RectF
-import android.icu.number.IntegerWidth
 import android.util.AttributeSet
 import android.util.Log
+import android.view.MotionEvent
 import android.view.View
 import android.view.animation.DecelerateInterpolator
-import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
-
 import com.carl.component.R
+import kotlin.math.abs
+import kotlin.math.atan2
+import kotlin.math.hypot
 import kotlin.math.roundToInt
 
 
@@ -25,7 +25,8 @@ class ProgressView @JvmOverloads constructor(
 ) : View(context, attrs, defStyleAttr) {
 
     companion object {
-        private const val STROKE_WIDTH = 5f
+        private const val STROKE_WIDTH = 5f // 圆环线条宽度
+        private const val TOUCH_WIDTH = STROKE_WIDTH + 10f // 增加圆环线条的点击区域
     }
 
     /**
@@ -75,6 +76,11 @@ class ProgressView @JvmOverloads constructor(
      */
     private var textPadding = 0f
 
+    /**
+     * 是否处于拖动状态
+     */
+    private var isDragging = false
+
     init {
         val ta = context.obtainStyledAttributes(attrs, R.styleable.ProgressView, defStyleAttr, 0)
         try {
@@ -84,7 +90,7 @@ class ProgressView @JvmOverloads constructor(
             textPaint.color = color
             textPaint.textSize = ta.getDimension(R.styleable.ProgressView_textSize, 0f)
             textPadding = ta.getDimension(R.styleable.ProgressView_textPadding, 0f)
-            progress = ta.getFloat(R.styleable.ProgressView_progress,0f)
+            progress = ta.getFloat(R.styleable.ProgressView_progress, 0f)
         } finally {
             ta.recycle()
         }
@@ -105,19 +111,89 @@ class ProgressView @JvmOverloads constructor(
         super.onDetachedFromWindow()
     }
 
+    override fun onTouchEvent(event: MotionEvent): Boolean {
+        return when (event.actionMasked) {
+            MotionEvent.ACTION_DOWN -> {
+                Log.d("TouchTest", "DOWN")
+                if (!isInCircle(event.x, event.y)) {
+                    false
+                } else {
+                    isDragging = true
+                    parent?.requestDisallowInterceptTouchEvent(true)
+                    true
+                }
+            }
+
+            MotionEvent.ACTION_MOVE -> {
+                Log.d("TouchTest", "MOVE")
+                calculateProgress(event.x, event.y)
+                true
+            }
+
+            MotionEvent.ACTION_UP -> {
+                Log.d("TouchTest", "UP")
+                calculateProgress(event.x, event.y)
+                performClick()
+                isDragging = false //结束拖动进度条
+                parent?.requestDisallowInterceptTouchEvent(false)
+                true
+            }
+
+            MotionEvent.ACTION_CANCEL -> {
+                Log.d("TouchTest", "CANCEL")
+                isDragging = false
+                parent?.requestDisallowInterceptTouchEvent(false)
+                true
+            }
+
+            else -> super.onTouchEvent(event)
+        }
+    }
+
+    override fun performClick(): Boolean {
+        return super.performClick()
+    }
+
+    private fun isInCircle(x: Float, y: Float): Boolean {
+        val contentWidth = width - paddingLeft - paddingRight
+        val contentHeight = height - paddingTop - paddingBottom
+        val centerX = paddingLeft + contentWidth / 2
+        val centerY = paddingTop + contentHeight / 2
+        val distance = hypot(x - centerX, y - centerY)
+        val diameter = minOf(contentWidth, contentHeight)
+        val radius = (diameter - paint.strokeWidth) / 2
+        return abs(distance - radius) < TOUCH_WIDTH * den / 2
+    }
+
+    private fun calculateProgress(x: Float, y: Float) {
+        if (!isInCircle(x, y) && !isDragging) return
+        val contentWidth = width - paddingLeft - paddingRight
+        val contentHeight = height - paddingTop - paddingBottom
+        val centerX = paddingLeft + contentWidth / 2
+        val centerY = paddingTop + contentHeight / 2
+        val dx = x - centerX
+        val dy = y - centerY
+        val standardAngle = Math.toDegrees(atan2(dy.toDouble(), dx.toDouble())).toFloat()
+        val angle = (standardAngle + 90f + 360f) % 360f
+        val progress = angle / 360f * 100f
+        updateProgress(progress)
+    }
+
     private fun measureCircle(
         widthMeasureSpec: Int,
         heightMeasureSpec: Int
     ) {
         if (textPaint.textSize != 0f) {
-            measureCircleWithTextSize()
+            measureCircleWithTextSize(
+                widthMeasureSpec,
+                heightMeasureSpec
+            )
             return
         }
         val desiredWidth = maxOf(
             defaultDiameter + paddingLeft + paddingRight,
             suggestedMinimumWidth
         )
-        Log.d("jqhTest", "suggestedMinimumWidth = $suggestedMinimumWidth,desiredWidth = $desiredWidth")
         val desiredHeight = maxOf(
             defaultDiameter + paddingTop + paddingBottom,
             suggestedMinimumHeight
@@ -128,11 +204,32 @@ class ProgressView @JvmOverloads constructor(
         )
     }
 
-    private fun measureCircleWithTextSize() {
+    private fun measureCircleWithTextSize(
+        widthMeasureSpec: Int,
+        heightMeasureSpec: Int
+    ) {
         val textWidth = textPaint.measureText("100%")
-        val desiredWidth = textWidth + paddingLeft + paddingRight + textPadding * 2 + STROKE_WIDTH * den
-        val desiredHeight = textWidth + paddingTop + paddingBottom + textPadding * 2 + STROKE_WIDTH * den
-        setMeasuredDimension(desiredWidth.toInt(), desiredHeight.toInt())
+
+        val diameter = (
+                textWidth +
+                        textPadding * 2 +
+                        paint.strokeWidth
+                ).roundToInt()
+
+        val desiredWidth = maxOf(
+            diameter + paddingLeft + paddingRight,
+            suggestedMinimumWidth
+        )
+
+        val desiredHeight = maxOf(
+            diameter + paddingTop + paddingBottom,
+            suggestedMinimumHeight
+        )
+
+        setMeasuredDimension(
+            resolveSize(desiredWidth, widthMeasureSpec),
+            resolveSize(desiredHeight, heightMeasureSpec)
+        )
     }
 
     override fun onDraw(canvas: Canvas) {
@@ -173,7 +270,6 @@ class ProgressView @JvmOverloads constructor(
             textPaint
         )
         canvas.drawArc(rectF, startAngle, sweepAngle, false, paint)
-
     }
 
     private fun drawCircleWithTextSize(canvas: Canvas) {
