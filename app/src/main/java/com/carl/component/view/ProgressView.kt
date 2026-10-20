@@ -81,6 +81,10 @@ class ProgressView @JvmOverloads constructor(
      */
     private var isDragging = false
 
+    private var rectF: RectF? = null
+
+    private var activePointerId = -1 
+
     init {
         val ta = context.obtainStyledAttributes(attrs, R.styleable.ProgressView, defStyleAttr, 0)
         try {
@@ -90,7 +94,7 @@ class ProgressView @JvmOverloads constructor(
             textPaint.color = color
             textPaint.textSize = ta.getDimension(R.styleable.ProgressView_textSize, 0f)
             textPadding = ta.getDimension(R.styleable.ProgressView_textPadding, 0f)
-            progress = ta.getFloat(R.styleable.ProgressView_progress, 0f)
+            progress = ta.getFloat(R.styleable.ProgressView_progress, 0f).coerceIn(0f, 100f)
         } finally {
             ta.recycle()
         }
@@ -108,6 +112,8 @@ class ProgressView @JvmOverloads constructor(
     override fun onDetachedFromWindow() {
         progressAnimator?.cancel()
         progressAnimator = null
+        isDragging = false
+        activePointerId = -1
         super.onDetachedFromWindow()
     }
 
@@ -118,31 +124,61 @@ class ProgressView @JvmOverloads constructor(
                 if (!isInCircle(event.x, event.y)) {
                     false
                 } else {
+                    activePointerId = event.getPointerId(0)
                     isDragging = true
+                    progressAnimator?.cancel()
                     parent?.requestDisallowInterceptTouchEvent(true)
                     true
                 }
             }
 
+            MotionEvent.ACTION_POINTER_DOWN -> {
+                // 其他手指按下，不改变当前控制者
+                true
+            }
+
             MotionEvent.ACTION_MOVE -> {
                 Log.d("TouchTest", "MOVE")
-                calculateProgress(event.x, event.y)
+                val index = event.findPointerIndex(activePointerId)
+
+                if (isDragging && index >= 0) {
+                    calculateProgress(
+                        event.getX(index),
+                        event.getY(index)
+                    )
+                }
+                true
+            }
+
+            MotionEvent.ACTION_POINTER_UP -> {
+                val upIndex = event.actionIndex
+                val upId = event.getPointerId(upIndex)
+
+                if (upId == activePointerId) {
+                    // 当前控制者抬起，切换到另一根手指
+                    val newIndex = if (upIndex == 0) 1 else 0
+                    activePointerId = event.getPointerId(newIndex)
+                }
                 true
             }
 
             MotionEvent.ACTION_UP -> {
                 Log.d("TouchTest", "UP")
-                calculateProgress(event.x, event.y)
-                performClick()
-                isDragging = false //结束拖动进度条
-                parent?.requestDisallowInterceptTouchEvent(false)
+                val index = event.findPointerIndex(activePointerId)
+                if (isDragging && index >= 0) {
+                    calculateProgress(
+                        event.getX(index),
+                        event.getY(index)
+                    )
+                    performClick()
+                }
+                finishTouch()
                 true
             }
 
             MotionEvent.ACTION_CANCEL -> {
                 Log.d("TouchTest", "CANCEL")
-                isDragging = false
-                parent?.requestDisallowInterceptTouchEvent(false)
+                finishTouch()
                 true
             }
 
@@ -253,12 +289,14 @@ class ProgressView @JvmOverloads constructor(
         val radius = diameter / 2f
         val centerX = paddingLeft + contentWidth / 2f
         val centerY = paddingTop + contentHeight / 2f
-        val rectF = RectF(
-            centerX - radius,
-            centerY - radius,
-            centerX + radius,
-            centerY + radius
-        )
+        if (rectF == null) {
+            rectF = RectF(
+                centerX - radius,
+                centerY - radius,
+                centerX + radius,
+                centerY + radius
+            )
+        }
         val startAngle = -90f
         val sweepAngle = progress / 100f * 360f
         setTextSize(diameter - textPadding)
@@ -269,7 +307,7 @@ class ProgressView @JvmOverloads constructor(
             getBaseLine(centerY, textPaint.fontMetrics),
             textPaint
         )
-        canvas.drawArc(rectF, startAngle, sweepAngle, false, paint)
+        canvas.drawArc(rectF!!, startAngle, sweepAngle, false, paint)
     }
 
     private fun drawCircleWithTextSize(canvas: Canvas) {
@@ -311,6 +349,12 @@ class ProgressView @JvmOverloads constructor(
         val bottom = centerY + fontMetrics.descent
         val mid = (top + bottom) / 2
         return centerY - (mid - centerY)
+    }
+
+    private fun finishTouch() {
+        isDragging = false
+        activePointerId = -1
+        parent?.requestDisallowInterceptTouchEvent(false)
     }
 
     fun updateProgress(value: Float) {
