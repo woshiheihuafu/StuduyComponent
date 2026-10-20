@@ -5,13 +5,16 @@ import androidx.activity.ComponentActivity
 import androidx.activity.enableEdgeToEdge
 import com.carl.component.view.ProgressView
 
+
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         setContentView(R.layout.activity_main)
         val progressView = findViewById<ProgressView>(R.id.progress_view)
-        progressView.animateProgress()
-
+        progressView.setOnClickListener {
+            progressView.updateProgress(0f)
+            progressView.animateProgress()
+        }
     }
 }

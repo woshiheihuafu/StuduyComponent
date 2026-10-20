@@ -11,6 +11,9 @@
     <declare-styleable name="ProgressView">
         <attr name="mode" format="integer" />
         <attr name="color" format="color" />
+        <attr name="textSize" format="dimension"/>
+        <attr name="textPadding" format="dimension"/>
+        <attr name="progress" format="float"/>
     </declare-styleable>
 
 </resources>
