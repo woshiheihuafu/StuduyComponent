@@ -89,6 +89,10 @@ class ProgressView @JvmOverloads constructor(
     private var centerY = 0f
     private var radius = 0f
     private var rectF: RectF = RectF()
+    private var lastPaddingLeft = paddingLeft
+    private var lastPaddingTop = paddingTop
+    private var lastPaddingRight = paddingRight
+    private var lastPaddingBottom = paddingBottom
 
     private var baseLine = 0f
 
@@ -197,13 +201,44 @@ class ProgressView @JvmOverloads constructor(
 
     override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
         super.onSizeChanged(w, h, oldw, oldh)
-        updateGeometry(w, h)
-        updateTextSize()
-        updateTextBaseLine()
+        updateDrawingCache(w, h)
+    }
+
+    override fun onLayout(
+        changed: Boolean,
+        left: Int,
+        top: Int,
+        right: Int,
+        bottom: Int
+    ) {
+        super.onLayout(changed, left, top, right, bottom)
+
+        if (
+            lastPaddingLeft != paddingLeft ||
+            lastPaddingTop != paddingTop ||
+            lastPaddingRight != paddingRight ||
+            lastPaddingBottom != paddingBottom
+        ) {
+            updateDrawingCache(width, height)
+
+            lastPaddingLeft = paddingLeft
+            lastPaddingTop = paddingTop
+            lastPaddingRight = paddingRight
+            lastPaddingBottom = paddingBottom
+        }
     }
 
     override fun performClick(): Boolean {
         return super.performClick()
+    }
+
+    /**
+     * 计算
+     */
+    private fun updateDrawingCache(width: Int, height: Int) {
+        updateGeometry(width, height)
+        updateTextSize()
+        updateTextBaseLine()
     }
 
     /**
@@ -364,6 +399,7 @@ class ProgressView @JvmOverloads constructor(
         target: Float,
         durationMs: Long = 1000L
     ) {
+        if (isDragging) return
         progressAnimator?.cancel()
         progressAnimator = ValueAnimator.ofFloat(progress, target.coerceIn(0f, 100f)).apply {
             duration = durationMs.coerceAtLeast(1000L)
