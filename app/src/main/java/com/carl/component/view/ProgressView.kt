@@ -47,7 +47,7 @@ class ProgressView @JvmOverloads constructor(
     val den = resources.displayMetrics.density
 
     /**
-     * 进度
+     * 进度动画
      */
     private var progressAnimator: ValueAnimator? = null
 
@@ -56,6 +56,7 @@ class ProgressView @JvmOverloads constructor(
      */
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.STROKE
+        color = Color.BLUE
         strokeWidth = STROKE_WIDTH * den
         strokeCap = Paint.Cap.ROUND
     }
@@ -66,24 +67,30 @@ class ProgressView @JvmOverloads constructor(
 
     private val textPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = Color.BLUE
-        textSize = 0f
+        textSize = 0f * den
         textAlign = Paint.Align.CENTER
         style = Paint.Style.FILL
     }
 
-    /**
-     * 圆环进度条与文字的左右padding
-     */
-    private var textPadding = 0f
+    private var isDependOnTextSize = false
 
     /**
      * 是否处于拖动状态
      */
     private var isDragging = false
 
-    private var rectF: RectF? = null
+    /**
+     * 尺寸成员变量
+     */
+    private var textPadding = 0f // 圆环进度条与文字的左右padding
+    private var centerX = 0f
+    private var centerY = 0f
+    private var radius = 0f
+    private var rectF: RectF = RectF()
 
-    private var activePointerId = -1 
+    private var baseLine = 0f
+
+    private var activePointerId = -1
 
     init {
         val ta = context.obtainStyledAttributes(attrs, R.styleable.ProgressView, defStyleAttr, 0)
@@ -92,7 +99,8 @@ class ProgressView @JvmOverloads constructor(
             val color = ta.getColor(R.styleable.ProgressView_color, Color.BLUE)
             paint.color = color
             textPaint.color = color
-            textPaint.textSize = ta.getDimension(R.styleable.ProgressView_textSize, 0f)
+            textPaint.textSize = ta.getDimension(R.styleable.ProgressView_textSize, textPaint.textSize)
+            if (textPaint.textSize != 0f) isDependOnTextSize = true
             textPadding = ta.getDimension(R.styleable.ProgressView_textPadding, 0f)
             progress = ta.getFloat(R.styleable.ProgressView_progress, 0f).coerceIn(0f, 100f)
         } finally {
@@ -186,27 +194,62 @@ class ProgressView @JvmOverloads constructor(
         }
     }
 
+    override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
+        super.onSizeChanged(w, h, oldw, oldh)
+        updateGeometry(w, h)
+        updateTextSize()
+        updateTextBaseLine()
+    }
+
     override fun performClick(): Boolean {
         return super.performClick()
     }
 
+    /**
+     * 计算圆心，半径，RectF
+     */
+    private fun updateGeometry(w: Int, h: Int) {
+        val contentWidth = (w - paddingLeft - paddingRight).toFloat().coerceAtLeast(0f)
+        val contentHeight = (h - paddingTop - paddingBottom).toFloat().coerceAtLeast(0f)
+        centerX = paddingLeft + contentWidth / 2
+        centerY = paddingTop + contentHeight / 2
+        radius = ((minOf(contentWidth, contentHeight) - paint.strokeWidth) / 2f).coerceAtLeast(0f)
+        rectF = RectF(
+            centerX - radius,
+            centerY - radius,
+            centerX + radius,
+            centerY + radius
+        )
+    }
+
+    /**
+     * 计算textSize
+     */
+    private fun updateTextSize() {
+        if (isDependOnTextSize) return
+        val contentWidth = radius * 2 -textPadding
+        var textWidth = textPaint.measureText("100%")
+        while (textWidth < contentWidth) {
+            textPaint.textSize = (textPaint.textSize / den + 1f) * den
+            textWidth = textPaint.measureText("100%")
+        }
+        textPaint.textSize = (textPaint.textSize / den - 1f) * den
+    }
+
+    /**
+     * 计算baseLine
+     */
+    private fun updateTextBaseLine() {
+        baseLine = getBaseLine(centerY, textPaint.fontMetrics)
+    }
+
     private fun isInCircle(x: Float, y: Float): Boolean {
-        val contentWidth = width - paddingLeft - paddingRight
-        val contentHeight = height - paddingTop - paddingBottom
-        val centerX = paddingLeft + contentWidth / 2
-        val centerY = paddingTop + contentHeight / 2
         val distance = hypot(x - centerX, y - centerY)
-        val diameter = minOf(contentWidth, contentHeight)
-        val radius = (diameter - paint.strokeWidth) / 2
         return abs(distance - radius) < TOUCH_WIDTH * den / 2
     }
 
     private fun calculateProgress(x: Float, y: Float) {
         if (!isInCircle(x, y) && !isDragging) return
-        val contentWidth = width - paddingLeft - paddingRight
-        val contentHeight = height - paddingTop - paddingBottom
-        val centerX = paddingLeft + contentWidth / 2
-        val centerY = paddingTop + contentHeight / 2
         val dx = x - centerX
         val dy = y - centerY
         val standardAngle = Math.toDegrees(atan2(dy.toDouble(), dx.toDouble())).toFloat()
@@ -219,7 +262,7 @@ class ProgressView @JvmOverloads constructor(
         widthMeasureSpec: Int,
         heightMeasureSpec: Int
     ) {
-        if (textPaint.textSize != 0f) {
+        if (isDependOnTextSize) {
             measureCircleWithTextSize(
                 widthMeasureSpec,
                 heightMeasureSpec
@@ -274,75 +317,18 @@ class ProgressView @JvmOverloads constructor(
     }
 
     private fun drawCircle(canvas: Canvas) {
-
-        if (textPaint.textSize != 0f) {
-            drawCircleWithTextSize(canvas)
-            return
-        }
-        val contentWidth = width - paddingLeft - paddingRight
-        val contentHeight = height - paddingTop - paddingBottom
-
-        val diameter = minOf(contentWidth, contentHeight) -
-                paint.strokeWidth
-
-        if (diameter <= 0f) return
-        val radius = diameter / 2f
-        val centerX = paddingLeft + contentWidth / 2f
-        val centerY = paddingTop + contentHeight / 2f
-        if (rectF == null) {
-            rectF = RectF(
-                centerX - radius,
-                centerY - radius,
-                centerX + radius,
-                centerY + radius
-            )
-        }
+        if (radius <= 0f) return
         val startAngle = -90f
         val sweepAngle = progress / 100f * 360f
-        setTextSize(diameter - textPadding)
-
         canvas.drawText(
             "${progress.toInt()}%",
             centerX,
-            getBaseLine(centerY, textPaint.fontMetrics),
+            baseLine,
             textPaint
         )
-        canvas.drawArc(rectF!!, startAngle, sweepAngle, false, paint)
-    }
-
-    private fun drawCircleWithTextSize(canvas: Canvas) {
-        val contentWidth = width - paddingLeft - paddingRight
-        val contentHeight = height - paddingTop - paddingBottom
-        val diameter = minOf(contentWidth, contentHeight) - paint.strokeWidth
-        if (diameter <= 0) return
-        val radius = diameter / 2
-        val centerX = paddingLeft + contentWidth / 2f
-        val centerY = paddingTop + contentHeight / 2f
-        val rectF = RectF(
-            centerX - radius,
-            centerY - radius,
-            centerX + radius,
-            centerY + radius
-        )
-        val startAngle = -90f
-        val sweepAngle = progress / 100f * 360f
         canvas.drawArc(rectF, startAngle, sweepAngle, false, paint)
-        canvas.drawText(
-            "${progress.toInt()}%",
-            centerX,
-            getBaseLine(centerY, textPaint.fontMetrics),
-            textPaint
-        )
     }
 
-    private fun setTextSize(contentWidth: Float) {
-        var textWidth = textPaint.measureText("100%")
-        while (textWidth < contentWidth) {
-            textPaint.textSize = (textPaint.textSize / den + 1f) * den
-            textWidth = textPaint.measureText("100%")
-        }
-        textPaint.textSize = (textPaint.textSize / den - 1f) * den
-    }
 
     private fun getBaseLine(centerY: Float, fontMetrics: Paint.FontMetrics): Float {
         val top = centerY + fontMetrics.ascent
