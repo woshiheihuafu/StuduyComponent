@@ -28,7 +28,12 @@ class ProgressView @JvmOverloads constructor(
 
     companion object {
         private const val STROKE_WIDTH = 5f // 圆环线条宽度
+        private const val TICK_STROKE_WIDTH = 2f // 刻度线宽度
         private const val TOUCH_WIDTH = STROKE_WIDTH + 10f // 增加圆环线条的点击区域
+        private const val TICK_LENGTH = 7f // 刻度线长度
+        private const val TICK_PADDING = 7f //刻度线与进度条距离
+        private const val PER_TICK_ANGLE = 30
+        private const val TOTAL_TICK_COUNT = 12
     }
 
     /**
@@ -74,6 +79,26 @@ class ProgressView @JvmOverloads constructor(
         style = Paint.Style.FILL
     }
 
+    /**
+     * 刻度线paint：基础色
+     */
+
+    private val baseTickPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = Color.GRAY
+        strokeWidth = TICK_STROKE_WIDTH * den
+        strokeCap = Paint.Cap.ROUND
+    }
+
+    /**
+     * 刻度线paint：彩色
+     */
+
+    private val tickPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = Color.BLUE
+        strokeWidth = TICK_STROKE_WIDTH * den
+        strokeCap = Paint.Cap.ROUND
+    }
+
     private var isDependOnTextSize = false
 
     /**
@@ -84,7 +109,10 @@ class ProgressView @JvmOverloads constructor(
     /**
      * 尺寸成员变量
      */
-    private var textPadding = 0f // 圆环进度条与文字的左右padding
+    private var textPadding = 0f // 文字与刻度线的距离
+    private var tickPadding = TICK_PADDING * den // 刻度线与进度条的距离
+
+    private var tickLength = TICK_LENGTH * den
     private var centerX = 0f
     private var centerY = 0f
     private var radius = 0f
@@ -106,6 +134,7 @@ class ProgressView @JvmOverloads constructor(
             paint.color = color
             textPaint.color = color
             textPaint.textSize = ta.getDimension(R.styleable.ProgressView_textSize, textPaint.textSize)
+            tickPaint.color = color
             if (textPaint.textSize != 0f) isDependOnTextSize = true
             textPadding = ta.getDimension(R.styleable.ProgressView_textPadding, 0f)
             progress = ta.getFloat(R.styleable.ProgressView_progress, 0f).coerceIn(0f, 100f)
@@ -263,7 +292,7 @@ class ProgressView @JvmOverloads constructor(
      */
     private fun updateTextSize() {
         if (isDependOnTextSize) return
-        val availableRadius = (radius - paint.strokeWidth / 2 - textPadding).coerceAtLeast(0f)
+        val availableRadius = (radius - paint.strokeWidth / 2 - textPadding - tickPadding - tickLength).coerceAtLeast(0f)
         textPaint.textSize = 1f * den
         val textWidth = textPaint.measureText("100%")
         val textHeight = textPaint.fontMetrics.descent - textPaint.fontMetrics.ascent
@@ -331,7 +360,7 @@ class ProgressView @JvmOverloads constructor(
             (
                     hypot(textWidth, textHeight) +
                             2f * textPadding +
-                            2f * paint.strokeWidth
+                            2f * paint.strokeWidth + 2f * tickPadding + 2f * tickLength
                     ).toDouble()
         ).toInt()
 
@@ -354,6 +383,7 @@ class ProgressView @JvmOverloads constructor(
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
         drawCircle(canvas)
+        drawTicks(canvas)
     }
 
     private fun drawCircle(canvas: Canvas) {
@@ -369,6 +399,37 @@ class ProgressView @JvmOverloads constructor(
         canvas.drawArc(rectF, startAngle, sweepAngle, false, paint)
     }
 
+    private fun drawTicks(canvas: Canvas) {
+        val angle = progress / 100f * 360f
+        val textRadius = radius - paint.strokeWidth/2f - tickPadding - tickLength - textPadding
+        val startX = centerX
+        val startY = centerY - textRadius - tickLength - textPadding
+        val stopY = startY + tickLength
+        val stopX = centerX
+        canvas.save()
+        for (i in 0 until TOTAL_TICK_COUNT) {
+            val curAngle = i * PER_TICK_ANGLE
+            if (angle > curAngle) {
+                canvas.drawLine(
+                    startX,
+                    startY,
+                    stopX,
+                    stopY,
+                    tickPaint
+                )
+            } else {
+                canvas.drawLine(
+                    startX,
+                    startY,
+                    stopX,
+                    stopY,
+                    baseTickPaint
+                )
+            }
+            canvas.rotate(PER_TICK_ANGLE.toFloat(),centerX,centerY)
+        }
+        canvas.restore()
+    }
 
     private fun getBaseLine(centerY: Float, fontMetrics: Paint.FontMetrics): Float {
         val top = centerY + fontMetrics.ascent
