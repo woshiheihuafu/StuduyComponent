@@ -14,6 +14,8 @@ import android.view.animation.DecelerateInterpolator
 import com.carl.component.R
 import kotlin.math.abs
 import kotlin.math.atan2
+import kotlin.math.ceil
+import kotlin.math.floor
 import kotlin.math.hypot
 import kotlin.math.roundToInt
 
@@ -120,8 +122,7 @@ class ProgressView @JvmOverloads constructor(
     override fun onDetachedFromWindow() {
         progressAnimator?.cancel()
         progressAnimator = null
-        isDragging = false
-        activePointerId = -1
+        finishTouch()
         super.onDetachedFromWindow()
     }
 
@@ -227,13 +228,13 @@ class ProgressView @JvmOverloads constructor(
      */
     private fun updateTextSize() {
         if (isDependOnTextSize) return
-        val contentWidth = radius * 2 -textPadding
-        var textWidth = textPaint.measureText("100%")
-        while (textWidth < contentWidth) {
-            textPaint.textSize = (textPaint.textSize / den + 1f) * den
-            textWidth = textPaint.measureText("100%")
-        }
-        textPaint.textSize = (textPaint.textSize / den - 1f) * den
+        val availableRadius = (radius - paint.strokeWidth / 2 - textPadding).coerceAtLeast(0f)
+        textPaint.textSize = 1f * den
+        val textWidth = textPaint.measureText("100%")
+        val textHeight = textPaint.fontMetrics.descent - textPaint.fontMetrics.ascent
+        val curRadius = hypot(textWidth / 2, textHeight / 2)
+        val scale = if (curRadius > 0f) availableRadius / curRadius else 0f
+        textPaint.textSize = floor(scale) * den
     }
 
     /**
@@ -244,6 +245,7 @@ class ProgressView @JvmOverloads constructor(
     }
 
     private fun isInCircle(x: Float, y: Float): Boolean {
+        if (radius <= 0f) return false
         val distance = hypot(x - centerX, y - centerY)
         return abs(distance - radius) < TOUCH_WIDTH * den / 2
     }
@@ -255,7 +257,7 @@ class ProgressView @JvmOverloads constructor(
         val standardAngle = Math.toDegrees(atan2(dy.toDouble(), dx.toDouble())).toFloat()
         val angle = (standardAngle + 90f + 360f) % 360f
         val progress = angle / 360f * 100f
-        updateProgress(progress)
+        applyProgress(progress)
     }
 
     private fun measureCircle(
@@ -288,12 +290,15 @@ class ProgressView @JvmOverloads constructor(
         heightMeasureSpec: Int
     ) {
         val textWidth = textPaint.measureText("100%")
-
-        val diameter = (
-                textWidth +
-                        textPadding * 2 +
-                        paint.strokeWidth
-                ).roundToInt()
+        val fm = textPaint.fontMetrics
+        val textHeight = fm.descent - fm.ascent
+        val diameter = ceil(
+            (
+                    hypot(textWidth, textHeight) +
+                            2f * textPadding +
+                            2f * paint.strokeWidth
+                    ).toDouble()
+        ).toInt()
 
         val desiredWidth = maxOf(
             diameter + paddingLeft + paddingRight,
@@ -343,9 +348,16 @@ class ProgressView @JvmOverloads constructor(
         parent?.requestDisallowInterceptTouchEvent(false)
     }
 
-    fun updateProgress(value: Float) {
+    private fun applyProgress(value: Float) {
         progress = value.coerceIn(0f, 100f)
         invalidate()
+    }
+
+    fun updateProgress(value: Float) {
+        require(value.isFinite())
+        progressAnimator?.cancel()
+        progressAnimator = null
+        applyProgress(value)
     }
 
     fun animateProgressTo(
@@ -354,11 +366,11 @@ class ProgressView @JvmOverloads constructor(
     ) {
         progressAnimator?.cancel()
         progressAnimator = ValueAnimator.ofFloat(progress, target.coerceIn(0f, 100f)).apply {
-            duration = durationMs
+            duration = durationMs.coerceAtLeast(1000L)
             interpolator = DecelerateInterpolator()
             addUpdateListener { animator ->
                 val animatedValue = animator.animatedValue as Float
-                updateProgress(animatedValue)
+                applyProgress(animatedValue)
             }
             start()
         }
